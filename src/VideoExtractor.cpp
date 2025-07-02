@@ -100,6 +100,9 @@ GoProVideoExtractor::GoProVideoExtractor(const std::string filename,
     std::cout << RED << "Failed to allocated memory for AVCodecContext" << RESET << std::endl;
   }
 
+  pCodecContext->thread_count=0;
+  pCodecContext->thread_type=FF_THREAD_FRAME;     
+
   if (avcodec_parameters_to_context(pCodecContext, codecParameters) < 0) {
     std::cout << RED << "failed to copy codec params to codec context" RESET << std::endl;
   }
