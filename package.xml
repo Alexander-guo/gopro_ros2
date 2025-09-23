@@ -1,20 +1,26 @@
-<package format="2">
-    <name>gopro_ros</name>
-    <version>0.0.1</version>
-    <description> GoPro Video information extractor. </description>
-    <maintainer email="bjoshi@email.sc.edu">Bharat Joshi</maintainer>
-    <license>BSD</license>
-    <author email="bjoshi@email.sc.edu">Bharat Joshi</author>
+<package format="3">
+  <name>gopro_ros2</name>
+  <version>0.0.1</version>
+  <description>GoPro Video information extractor.</description>
 
-    <buildtool_depend>catkin</buildtool_depend>
-    
-    <depend>cv_bridge</depend>
-    <depend>geometry_msgs</depend>
-    <depend>rosbag</depend>
-    <depend>roscpp</depend>
-    <depend>sensor_msgs</depend>
-    <depend>std_msgs</depend>
+  <maintainer email="bjoshi@email.sc.edu">Bharat Joshi</maintainer>
+  <author email="bjoshi@email.sc.edu">Bharat Joshi</author>
+  <license>BSD</license>
 
-    <exec_depend>rospy</exec_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>rclcpp</depend>
+  <depend>cv_bridge</depend>
+  <depend>geometry_msgs</depend>
+  <depend>rosbag2_cpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <exec_depend>OpenCV</exec_depend>
+  <exec_depend>ffmpeg</exec_depend>
+  <exec_depend>Eigen3</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
 </package>
