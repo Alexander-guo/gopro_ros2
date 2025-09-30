@@ -4,10 +4,14 @@
 
 
 #include <rclcpp/rclcpp.hpp>
-#include <rosbag2_cpp/writer.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/magnetic_field.hpp>
 #include <std_msgs/msg/header.hpp>
+#include <rosbag2_cpp/writer.hpp>
+#include <rosbag2_storage/storage_options.hpp>
+#include <rclcpp/serialization.hpp>
+#include <rclcpp/serialized_message.hpp>
+#include <rmw/rmw.h>
 
 #include <experimental/filesystem>
 #include <iostream>
@@ -15,6 +19,7 @@
 #include "ImuExtractor.h"
 #include "VideoExtractor.h"
 #include "color_codes.h"
+#include "Utils.h"
 
 using namespace std;
 namespace fs = std::experimental::filesystem;
@@ -66,8 +71,20 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  rosbag2_cpp::Writer bag;
-  bag.open(rosbag);
+  // infer bag config from rosbag file name
+  BagConfig cfg = infer_bag_config(rosbag);
+
+  rosbag2_cpp::Writer bagnfer;
+  rosbag2_storage::StorageOptions storage_options;
+  storage_options.uri = cfg.uri;
+  storage_options.storage_id = cfg.storage_id;  // e.g., "sqlite3" or "mcap"
+
+  rosbag2_cpp::ConverterOptions converter_options{
+      rmw_get_serialization_format(),
+      rmw_get_serialization_format()
+  };
+
+  bag.open(storage_options, converter_options);
 
   vector<fs::path> video_files;
 
@@ -180,12 +197,12 @@ int main(int argc, char* argv[]) {
   assert(accl_queue.size() == gyro_queue.size());
 
   double previous = accl_queue.front().timestamp_ * 1e-9;
+  rclcpp::Serialization<sensor_msgs::msg::Imu> imu_serializer;
 
   while (!accl_queue.empty() && !gyro_queue.empty()) {
     AcclMeasurement accl = accl_queue.front();
     GyroMeasurement gyro = gyro_queue.front();
     int64_t diff = accl.timestamp_ - gyro.timestamp_;
-
     Timestamp stamp;
 
     if (abs(diff) > 100000) {
@@ -213,13 +230,23 @@ int main(int argc, char* argv[]) {
     imu_msg.angular_velocity.y = gyro.data_.y();
     imu_msg.angular_velocity.z = gyro.data_.z();
 
-    bag.write("/gopro/imu", imu_msg, ros_time);
+    // Serialize
+    rclcpp::SerializedMessage imu_serialized_msg;
+    imu_serializer.serialize_message(&imu_msg, &imu_serialized_msg);
+
+    // convert builtin_interfaces::msg::Time to rclcpp::Time
+    rclcpp::Time ros2_time(ros_time.sec, ros_time.nanosec);
+    auto imu_msg_ptr = std::make_shared<rclcpp::SerializedMessage>(imu_serialized_msg);
+    bag.write(imu_msg_ptr, "/gopro/imu", "sensor_msgs/msg/Imu", ros2_time);
+    // bag.write(imu_serialized_msg, "/gopro/imu", "sensor_msgs/msg/Imu", ros2_time);
 
     accl_queue.pop_front();
     gyro_queue.pop_front();
   }
 
   // write magnetometer data
+  rclcpp::Serialization<sensor_msgs::msg::MagneticField> mag_serializer;
+
   while (!magnetometer_queue.empty()) {
     MagMeasurement mag = magnetometer_queue.front();
     Timestamp stamp = mag.timestamp_;
@@ -234,7 +261,15 @@ int main(int argc, char* argv[]) {
     magnetic_field_msg.magnetic_field.y = mag.magfield_.y();
     magnetic_field_msg.magnetic_field.z = mag.magfield_.z();
 
-    bag.write("/gopro/magnetic_field", magnetic_field_msg, ros_time);
+    // Serialize
+    rclcpp::SerializedMessage mag_serialized_msg;
+    mag_serializer.serialize_message(&magnetic_field_msg, &mag_serialized_msg);
+
+    // convert builtin_interfaces::msg::Time to rclcpp::Time
+    rclcpp::Time ros2_time(ros_time.sec, ros_time.nanosec);
+    auto mag_msg_ptr = std::make_shared<rclcpp::SerializedMessage>(mag_serialized_msg);
+    bag.write(mag_msg_ptr, "/gopro/magnetic_field", "sensor_msgs/msg/MagneticField", ros2_time);
+    // bag.write(mag_serialized_msg, "/gopro/magnetic_field", "sensor_msgs/msg/MagneticField", ros2_time);
 
     magnetometer_queue.pop_front();
   }

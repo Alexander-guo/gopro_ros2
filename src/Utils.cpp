@@ -6,8 +6,38 @@
 #include <chrono>
 #include <iostream>
 #include <sstream>
+#include <filesystem>
 
 #include "date.h"
+
+
+namespace fs = std::filesystem;
+
+BagConfig infer_bag_config(const std::string &bag_path) {
+  fs::path p(bag_path);
+  BagConfig cfg;
+
+  if (p.has_extension()) {
+    auto ext = p.extension().string();
+    if (ext == ".mcap") {
+      cfg.uri = bag_path;
+      cfg.storage_id = "mcap";
+    } else if (ext == ".db3") {
+      cfg.uri = bag_path;
+      cfg.storage_id = "sqlite3";
+    } else {
+      // Unknown extension → still use sqlite3 as safe default
+      cfg.uri = bag_path;
+      cfg.storage_id = "sqlite3";
+    }
+  } else {
+    // No extension: default sqlite3 and append .db3
+    cfg.uri = bag_path + ".db3";
+    cfg.storage_id = "sqlite3";
+  }
+
+  return cfg;
+}
 
 uint64_t parseISO(const std::string& iso_date) {
   using namespace date;

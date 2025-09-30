@@ -9,16 +9,20 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <!-- Core dependencies -->
   <depend>rclcpp</depend>
-  <depend>cv_bridge</depend>
-  <depend>geometry_msgs</depend>
-  <depend>rosbag2_cpp</depend>
-  <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>rosbag2_cpp</depend>
+  <depend>rosbag2_storage_default_plugins</depend>
 
-  <exec_depend>OpenCV</exec_depend>
+  <!-- Math / Vision libraries -->
+  <depend>eigen</depend>          <!-- maps to libeigen3-dev -->
+  <depend>opencv</depend>         <!-- maps to libopencv-dev -->
+
   <exec_depend>ffmpeg</exec_depend>
-  <exec_depend>Eigen3</exec_depend>
   <exec_depend>ros2launch</exec_depend>
 
   <export>

@@ -19,8 +19,14 @@
 
 #include "VideoExtractor.h"
 
-#include <cv_bridge/cv_bridge.h>
-#include <std_msgs/Header.h>
+#include <cv_bridge/cv_bridge.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/compressed_image.hpp>
+#include <std_msgs/msg/header.hpp>
+#include <builtin_interfaces/msg/time.hpp>
+#include <rosbag2_cpp/writer.hpp>
+#include <rosbag2_storage/storage_options.hpp>
+#include <rmw/rmw.h>
 
 #include <chrono>
 #include <experimental/filesystem>
@@ -453,19 +459,58 @@ void GoProVideoExtractor::displayImages() {
   avformat_close_input(&pFormatContext);
 }
 
+void GoProVideoExtractor::writeImageToBag(
+  rosbag2_cpp::Writer & bag,
+  const cv::Mat & img,
+  const std::string & topic_name,
+  const rclcpp::Time & timestamp,
+  const std::string & frame_id,
+  const std::string & encoding,
+  const bool compress_image
+) const {
+  std_msgs::msg::Header header;
+  header.stamp = timestamp;
+  header.frame_id = frame_id;
+
+  if (compress_image) {
+    auto img_msg = cv_bridge::CvImage(header, encoding, img).toCompressedImageMsg();
+  } else {
+    auto img_msg = cv_bridge::CvImage(header, encoding, img).toImageMsg();
+  }
+
+  rclcpp::SerializedMessage serialized_msg;
+
+  if (compress_image) {
+    compressed_serializer_.serialize_message(img_msg.get(), &serialized_msg);
+    bag.write(serialized_msg, topic_name + "/compressed", "sensor_msgs/msg/CompressedImage", timestamp);
+    return;
+  }
+  image_serializer_.serialize_message(img_msg.get(), &serialized_msg);
+  bag.write(serialized_msg, topic_name, "sensor_msgs/msg/Image", timestamp);
+}
+
 void GoProVideoExtractor::writeVideo(const std::string& bag_file,
                                      uint64_t last_image_stamp_ns,
                                      const std::string& image_topic) {
   ProgressBar progress(std::clog, 80u, "Progress");
+  auto logger = rclcpp::get_logger("gopro_video_writer");
 
-  rosbag::Bag bag;
-  if (std::experimental::filesystem::exists(bag_file))
-    bag.open(bag_file, rosbag::bagmode::Append);
-  else
-    bag.open(bag_file, rosbag::bagmode::Write);
+  BagConfig cfg = infer_bag_config(bag_file);
+
+  rosbag2_cpp::Writer bag;
+  rosbag2_storage::StorageOptions storage_options;
+  storage_options.uri = cfg.uri;
+  storage_options.storage_id = cfg.storage_id;  // e.g., "sqlite3" or "mcap"
+
+  rosbag2_cpp::ConverterOptions converter_options{
+      rmw_get_serialization_format(),
+      rmw_get_serialization_format()
+  };
+
+  bag.open(storage_options, converter_options);
 
   if (avformat_open_input(&pFormatContext, video_file.c_str(), NULL, NULL) != 0) {
-    std::cout << RED << "Could not open file" << video_file.c_str() << RESET << std::endl;
+    RCLCPP_ERROR_STREAM(logger, "Could not open file" << video_file.c_str());
     return;
   }
   video_stream = pFormatContext->streams[videoStreamIndex];
@@ -541,24 +586,16 @@ void GoProVideoExtractor::writeVideo(const std::string& bag_file,
           break;
         }
         uint64_t current_stamp = video_creation_time + nanosecs;
-        uint32_t secs = current_stamp * 1e-9;
-        uint32_t n_secs = current_stamp % 1000000000;
-        ros::Time ros_time(secs, n_secs);
 
+        rclcpp::Time ros2_time(current_stamp / 1000000000ULL, current_stamp % 1000000000ULL);
         cv::Mat img(image_height, image_width, CV_8UC3, pFrameRGB->data[0], pFrameRGB->linesize[0]);
         cv::cvtColor(img, img, cv::COLOR_RGB2BGR);
 
-        std_msgs::Header header;
-        header.stamp = ros_time;
-        header.frame_id = "gopro";
-        header.seq = seq++;
-
-        sensor_msgs::ImagePtr imgmsg =
-            cv_bridge::CvImage(header, sensor_msgs::image_encodings::BGR8, img).toImageMsg();
-        bag.write(image_topic, ros_time, imgmsg);
+        writeImageToBag(bag, img, image_topic, ros2_time, "gopro", "bgr8", false);
 
         double percent = (double)seq / (double)num_frames;
         progress.write(percent);
+        seq++;
       }
     }
 
@@ -575,16 +612,17 @@ void GoProVideoExtractor::writeVideo(const std::string& bag_file,
   bag.close();
 }
 
-void GoProVideoExtractor::writeVideo(rosbag::Bag& bag,
+void GoProVideoExtractor::writeVideo(rosbag2_cpp::Writer& bag,
                                      uint64_t last_image_stamp_ns,
                                      const std::string& image_topic,
                                      bool grayscale,
                                      bool compress_image,
                                      bool display_images) {
   ProgressBar progress(std::clog, 80u, "Progress");
+  auto logger = rclcpp::get_logger("gopro_video_writer");
 
   if (avformat_open_input(&pFormatContext, video_file.c_str(), NULL, NULL) != 0) {
-    std::cout << RED << "Could not open file" << video_file.c_str() << RESET << std::endl;
+    RCLCPP_ERROR_STREAM(logger, "Could not open file" << video_file.c_str());
     return;
   }
   video_stream = pFormatContext->streams[videoStreamIndex];
@@ -660,10 +698,8 @@ void GoProVideoExtractor::writeVideo(rosbag::Bag& bag,
           break;
         }
         uint64_t current_stamp = video_creation_time + nanosecs;
-        uint32_t secs = current_stamp * 1e-9;
-        uint32_t n_secs = current_stamp % 1000000000;
-        ros::Time ros_time(secs, n_secs);
 
+        rclcpp::Time ros2_time(current_stamp / 1000000000ULL, current_stamp % 1000000000ULL);
         cv::Mat img(image_height, image_width, CV_8UC3, pFrameRGB->data[0], pFrameRGB->linesize[0]);
         cv::cvtColor(img, img, cv::COLOR_RGB2BGR);
 
@@ -678,18 +714,7 @@ void GoProVideoExtractor::writeVideo(rosbag::Bag& bag,
           cv::waitKey(1);
         }
 
-        std_msgs::Header header;
-        header.stamp = ros_time;
-        header.frame_id = "gopro";
-
-        if (compress_image) {
-          sensor_msgs::CompressedImagePtr img_msg =
-              cv_bridge::CvImage(header, encoding, img).toCompressedImageMsg();
-          bag.write(image_topic + "/compressed", ros_time, img_msg);
-        } else {
-          sensor_msgs::ImagePtr imgmsg = cv_bridge::CvImage(header, encoding, img).toImageMsg();
-          bag.write(image_topic, ros_time, imgmsg);
-        }
+        writeImageToBag(bag, img, image_topic, ros2_time, "gopro", encoding, compress_image);
       }
 
       double percent = (double)frame_count++ / (double)num_frames;
@@ -709,16 +734,17 @@ void GoProVideoExtractor::writeVideo(rosbag::Bag& bag,
   avformat_close_input(&pFormatContext);
 }
 
-void GoProVideoExtractor::writeVideo(rosbag::Bag& bag,
+void GoProVideoExtractor::writeVideo(rosbag2_cpp::Writer& bag,
                                      const std::string& image_topic,
                                      const std::vector<uint64_t> image_stamps,
                                      bool grayscale,
                                      bool compress_image,
                                      bool display_images) {
   ProgressBar progress(std::clog, 80u, "Progress");
+  auto logger = rclcpp::get_logger("gopro_video_writer");
 
   if (avformat_open_input(&pFormatContext, video_file.c_str(), NULL, NULL) != 0) {
-    ROS_ERROR_STREAM("Could not open file" << video_file.c_str());
+    RCLCPP_ERROR_STREAM(logger, "Could not open file" << video_file.c_str());
     return;
   }
   video_stream = pFormatContext->streams[videoStreamIndex];
@@ -759,11 +785,13 @@ void GoProVideoExtractor::writeVideo(rosbag::Bag& bag,
       avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
 
       if (frame_count == image_stamps.size()) {
-        ROS_WARN_STREAM(
-            "Number of images does not match number of timestamps. This should only happen in "
-            "last/single GoPro Video !!");
-        ROS_WARN_STREAM("Skipping " << num_frames - image_stamps.size() << "/" << num_frames
-                                    << " images");
+        RCLCPP_WARN_STREAM(logger(),
+                   "Number of images does not match number of timestamps. "
+                   "This should only happen in last/single GoPro Video !!");
+
+        RCLCPP_WARN_STREAM(logger,
+                   "Skipping " << num_frames - image_stamps.size() << "/" << num_frames
+                   << " images");
         break;
       }
       // Did we get a video frame?
@@ -780,10 +808,8 @@ void GoProVideoExtractor::writeVideo(rosbag::Bag& bag,
 
         // Save the frame to disk
         uint64_t current_stamp = image_stamps[frame_count];
-        uint32_t secs = current_stamp * 1e-9;
-        uint32_t n_secs = current_stamp % 1000000000;
-        ros::Time ros_time(secs, n_secs);
 
+        rclcpp::Time ros2_time(current_stamp / 1000000000ULL, current_stamp % 1000000000ULL);
         cv::Mat img(image_height, image_width, CV_8UC3, pFrameRGB->data[0], pFrameRGB->linesize[0]);
         cv::cvtColor(img, img, cv::COLOR_RGB2BGR);
 
@@ -798,19 +824,8 @@ void GoProVideoExtractor::writeVideo(rosbag::Bag& bag,
           cv::waitKey(1);
         }
 
-        std_msgs::Header header;
-        header.stamp = ros_time;
-        header.frame_id = "gopro";
-        header.seq = frame_count++;
-
-        if (compress_image) {
-          sensor_msgs::CompressedImagePtr img_msg =
-              cv_bridge::CvImage(header, encoding, img).toCompressedImageMsg();
-          bag.write(image_topic + "/compressed", ros_time, img_msg);
-        } else {
-          sensor_msgs::ImagePtr imgmsg = cv_bridge::CvImage(header, encoding, img).toImageMsg();
-          bag.write(image_topic, ros_time, imgmsg);
-        }
+        writeImageToBag(bag, img, image_topic, ros2_time, "gopro", encoding, compress_image);
+        frame_count++;
       }
 
       double percent = (double)frame_count / (double)num_frames;
