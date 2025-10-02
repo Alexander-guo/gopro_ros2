@@ -1,14 +1,14 @@
 <launch>
-  <arg name="gopro_video" default_value="/home/bjoshi/gopro_cave/GX010013.MP4"/>
-  <arg name="gopro_folder" default_value="/home/bjoshi/gopro_cave"/>
-  <arg name="multiple_files" default_value="false"/>
-  <arg name="rosbag" default_value="/home/bjoshi/gopro_cave/GX010013.bag"/>
-  <arg name="scale" default_value="0.5"/>
-  <arg name="compressed_image_format" default_value="true"/>
-  <arg name="grayscale" default_value="true"/>
-  <arg name="display_images" default_value="false"/>
+  <arg name="gopro_video" default="/home/bjoshi/gopro_cave/GX010013.MP4"/>
+  <arg name="gopro_folder" default="/home/bjoshi/gopro_cave"/>
+  <arg name="multiple_files" default="false"/>
+  <arg name="rosbag" default="/home/bjoshi/gopro_cave/GX010013.bag"/>
+  <arg name="scale" default="0.5"/>
+  <arg name="compressed_image_format" default="true"/>
+  <arg name="grayscale" default="true"/>
+  <arg name="display_images" default="false"/>
 
-  <node pkg="gopro_ros2" exec="gopro_to_rosbag" name="gopro_to_rosbag" output="screen" required="true">
+  <node pkg="gopro_ros2" exec="gopro_to_rosbag" name="gopro_to_rosbag" output="screen">
     <param name="gopro_video" value="$(var gopro_video)"/>
     <param name="rosbag" value="$(var rosbag)"/>
     <param name="scale" value="$(var scale)"/>
