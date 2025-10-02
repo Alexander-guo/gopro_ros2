@@ -7,6 +7,7 @@
 extern "C" {
 
 #include <libavcodec/avcodec.h>
+#include <libavcodec/codec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
 #include <libavutil/imgutils.h>
@@ -30,7 +31,7 @@ private:
   AVFormatContext* pFormatContext = NULL;
   uint32_t videoStreamIndex;
   AVCodecContext* pCodecContext = NULL;
-  AVCodec* pCodec = NULL;
+  const AVCodec* pCodec = NULL;
   AVFrame* pFrame = NULL;
   AVFrame* pFrameRGB = NULL;
   AVPacket packet;

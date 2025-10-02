@@ -27,6 +27,7 @@
 #include <rosbag2_cpp/writer.hpp>
 #include <rosbag2_storage/storage_options.hpp>
 #include <rmw/rmw.h>
+#include <rclcpp/logging.hpp>
 
 #include <chrono>
 #include <experimental/filesystem>
@@ -45,21 +46,24 @@ GoProVideoExtractor::GoProVideoExtractor(const std::string filename,
                                          bool dump_info) {
   video_file = filename;
 
-  av_register_all();
-
   // Open video file
   std::cout << "Opening Video File: " << video_file << std::endl;
   pFormatContext = avformat_alloc_context();
   if (!pFormatContext) {
     printf("ERROR could not allocate memory for Format Context");
+    return;
   }
 
   if (avformat_open_input(&pFormatContext, video_file.c_str(), NULL, NULL) != 0) {
     std::cout << RED << "Could not open file" << video_file.c_str() << RESET << std::endl;
+    return;
   }
+
   // Retrieve stream information
-  if (avformat_find_stream_info(pFormatContext, NULL) < 0)
+  if (avformat_find_stream_info(pFormatContext, NULL) < 0) {
     std::cout << RED << "Couldn't find stream information" << RESET << std::endl;
+    return;
+  }
 
   // Dump information about file onto standard error
   if (dump_info) av_dump_format(pFormatContext, 0, video_file.c_str(), 0);
@@ -94,7 +98,7 @@ GoProVideoExtractor::GoProVideoExtractor(const std::string filename,
   num_frames = video_stream->nb_frames;
 
   // Get a pointer to the codec context for the video stream
-  pCodec = avcodec_find_decoder(pFormatContext->streams[videoStreamIndex]->codecpar->codec_id);
+  const AVCodec* pCodec = avcodec_find_decoder(pFormatContext->streams[videoStreamIndex]->codecpar->codec_id);
 
   // Find the decoder for the video stream
   if (pCodec == nullptr) {
@@ -156,7 +160,7 @@ void GoProVideoExtractor::save_to_png(AVFrame* frame,
                                       int height,
                                       AVRational time_base,
                                       std::string filename) {
-  AVCodec* outCodec = avcodec_find_encoder(AV_CODEC_ID_PNG);
+  const AVCodec* outCodec = avcodec_find_encoder(AV_CODEC_ID_PNG);
   AVCodecContext* outCodecCtx = avcodec_alloc_context3(outCodec);
 
   outCodecCtx->width = width;
@@ -214,6 +218,7 @@ void GoProVideoExtractor::save_raw(AVFrame* pFrame, int width, int height, std::
 
 int GoProVideoExtractor::extractFrames(const std::string& image_folder,
                                        uint64_t last_image_stamp_ns) {
+  auto logger = rclcpp::get_logger("gopro_frame_extractor");
   std::string image_data_folder = image_folder + "/data";
   if (!std::experimental::filesystem::is_directory(image_data_folder)) {
     std::experimental::filesystem::create_directories(image_data_folder);
@@ -257,34 +262,54 @@ int GoProVideoExtractor::extractFrames(const std::string& image_folder,
   double global_clock;
   uint64_t global_video_pkt_pts = AV_NOPTS_VALUE;
 
-  int frameFinished;
+  // int frameFinished;
   while (av_read_frame(pFormatContext, &packet) >= 0) {
     // Is this a packet from the video stream?
     if (packet.stream_index == videoStreamIndex) {
       // Decode video frame
-      avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
+      // avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
 
-      // Did we get a video frame?
-
-      if (packet.dts != AV_NOPTS_VALUE) {
-        global_clock = av_frame_get_best_effort_timestamp(pFrame);
-        global_video_pkt_pts = packet.pts;
-      } else if (global_video_pkt_pts && global_video_pkt_pts != AV_NOPTS_VALUE) {
-        global_clock = global_video_pkt_pts;
-      } else {
-        global_clock = 0;
+      int ret = avcodec_send_packet(pCodecContext, &packet);
+      if (ret < 0) {
+        RCLCPP_ERROR_STREAM(logger, "Error sending packet for decoding: " << ret);
+        av_packet_unref(&packet);
+        continue;
       }
 
-      double frame_delay = av_q2d(video_stream->time_base);
-      global_clock *= frame_delay;
+      // ---------------------------
+      // New API: receive frames
+      // ---------------------------
+      while (ret >= 0) {
+        ret = avcodec_receive_frame(pCodecContext, pFrame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+          break; // need more packets or end of stream
+        } else if (ret < 0) {
+          RCLCPP_ERROR_STREAM(logger, "Error during decoding: " << ret);
+          break;
+        }
 
-      // Only if we are repeating the
-      if (pFrame->repeat_pict > 0) {
-        double extra_delay = pFrame->repeat_pict * (frame_delay * 0.5);
-        global_clock += extra_delay;
-      }
+        // Did we get a video frame?
 
-      if (frameFinished) {
+        if (packet.dts != AV_NOPTS_VALUE) {
+          global_clock = pFrame->best_effort_timestamp;
+
+          global_video_pkt_pts = packet.pts;
+        } else if (global_video_pkt_pts && global_video_pkt_pts != AV_NOPTS_VALUE) {
+          global_clock = global_video_pkt_pts;
+        } else {
+          global_clock = 0;
+        }
+
+        double frame_delay = av_q2d(video_stream->time_base);
+        global_clock *= frame_delay;
+
+        // Only if we are repeating the
+        if (pFrame->repeat_pict > 0) {
+          double extra_delay = pFrame->repeat_pict * (frame_delay * 0.5);
+          global_clock += extra_delay;
+        }
+
+      // if (frameFinished) {
         // Convert the image from its native format to RGB
         sws_scale(sws_ctx,
                   (uint8_t const* const*)pFrame->data,
@@ -330,6 +355,7 @@ int GoProVideoExtractor::extractFrames(const std::string& image_folder,
 }
 
 int GoProVideoExtractor::getFrameStamps(std::vector<uint64_t>& stamps) {
+  auto logger = rclcpp::get_logger("gopro_frame_stamper");
   ProgressBar progress(std::clog, 70u, "Progress", '#');
   stamps.clear();
 
@@ -340,44 +366,68 @@ int GoProVideoExtractor::getFrameStamps(std::vector<uint64_t>& stamps) {
 
   double global_clock;
   uint64_t global_video_pkt_pts = AV_NOPTS_VALUE;
-  int frameFinished;
+  // int frameFinished;
   uint32_t frame_count = 0;
+
   while (av_read_frame(pFormatContext, &packet) >= 0) {
     // Is this a packet from the video stream?
     if (packet.stream_index == videoStreamIndex) {
       // Decode video frame
       //			avcodec_send_packet(pCodecContext, &packet);
       //			frameFinished = avcodec_receive_frame(pCodecContext, pFrameRGB);
-      avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
+      // avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
 
-      // Did we get a video frame?
-
-      if (packet.dts != AV_NOPTS_VALUE) {
-        global_clock = av_frame_get_best_effort_timestamp(pFrame);
-        global_video_pkt_pts = packet.pts;
-      } else if (global_video_pkt_pts && global_video_pkt_pts != AV_NOPTS_VALUE) {
-        global_clock = global_video_pkt_pts;
-      } else {
-        global_clock = 0;
+      // ---------------------------
+      // New API: send packet
+      // ---------------------------
+      int ret = avcodec_send_packet(pCodecContext, &packet);
+      if (ret < 0) {
+        RCLCPP_ERROR_STREAM(logger, "Error sending packet for decoding: " << ret);
+        av_packet_unref(&packet);
+        continue;
       }
 
-      double frame_delay = av_q2d(video_stream->time_base);
-      global_clock *= frame_delay;
+      // ---------------------------
+      // New API: receive frames
+      // ---------------------------
+      while (ret >= 0) {
+        ret = avcodec_receive_frame(pCodecContext, pFrame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+          break; // need more packets or end of stream
+        } else if (ret < 0) {
+          RCLCPP_ERROR_STREAM(logger, "Error during decoding: " << ret);
+          break;
+        }
+        // Did we get a video frame?
 
-      // Only if we are repeating the
-      if (pFrame->repeat_pict > 0) {
-        double extra_delay = pFrame->repeat_pict * (frame_delay * 0.5);
-        global_clock += extra_delay;
+        if (packet.dts != AV_NOPTS_VALUE) {
+          global_clock = pFrame->best_effort_timestamp;
+          global_video_pkt_pts = packet.pts;
+        } else if (global_video_pkt_pts && global_video_pkt_pts != AV_NOPTS_VALUE) {
+          global_clock = global_video_pkt_pts;
+        } else {
+          global_clock = 0;
+        }
+
+        double frame_delay = av_q2d(video_stream->time_base);
+        global_clock *= frame_delay;
+
+        // Only if we are repeating the
+        if (pFrame->repeat_pict > 0) {
+          double extra_delay = pFrame->repeat_pict * (frame_delay * 0.5);
+          global_clock += extra_delay;
+        }
+
+        uint64_t usecs = (uint64_t)(global_clock * 1000000);
+        // std::cout << "Stamp: " << usecs << std::endl;
+        stamps.push_back(usecs);
+
+        frame_count++;
+        double percent = (double)frame_count / (double)num_frames;
+        progress.write(percent);
       }
-
-      uint64_t usecs = (uint64_t)(global_clock * 1000000);
-      // std::cout << "Stamp: " << usecs << std::endl;
-      stamps.push_back(usecs);
-
-      frame_count++;
-      double percent = (double)frame_count / (double)num_frames;
-      progress.write(percent);
     }
+    av_packet_unref(&packet);
   }
 
   // Close the video file
@@ -387,6 +437,7 @@ int GoProVideoExtractor::getFrameStamps(std::vector<uint64_t>& stamps) {
 }
 
 void GoProVideoExtractor::displayImages() {
+  auto logger = rclcpp::get_logger("gopro_frame_displayer");
   if (avformat_open_input(&pFormatContext, video_file.c_str(), NULL, NULL) != 0) {
     std::cout << RED << "Could not open file" << video_file.c_str() << RESET << std::endl;
     exit(1);
@@ -418,16 +469,38 @@ void GoProVideoExtractor::displayImages() {
 
   //	std::cout << "Video Creation Time: " << uint64_to_string(start_time) << std::endl;
 
-  int frameFinished;
+  // int frameFinished;
   // cv::namedWindow("GoPro Video", cv::WINDOW_GUI_EXPANDED);
 
   while (av_read_frame(pFormatContext, &packet) >= 0) {
     // Is this a packet from the video stream?
     if (packet.stream_index == videoStreamIndex) {
       // Decode video frame
-      avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
+      // avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
 
-      if (frameFinished) {
+      // ---------------------------
+      // New API: send packet
+      // ---------------------------
+      int ret = avcodec_send_packet(pCodecContext, &packet);
+      if (ret < 0) {
+        RCLCPP_ERROR_STREAM(logger, "Error sending packet for decoding: " << ret);
+        av_packet_unref(&packet);
+        continue;
+      }
+
+      // ---------------------------
+      // New API: receive frames
+      // ---------------------------
+      while (ret >= 0) {
+        ret = avcodec_receive_frame(pCodecContext, pFrame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+          break; // need more packets or end of stream
+        } else if (ret < 0) {
+          RCLCPP_ERROR_STREAM(logger, "Error during decoding: " << ret);
+          break;
+        }
+
+      // if (frameFinished) {
         // Convert the image from its native format to RGB
         sws_scale(sws_ctx,
                   (uint8_t const* const*)pFrame->data,
@@ -471,22 +544,18 @@ void GoProVideoExtractor::writeImageToBag(
   std_msgs::msg::Header header;
   header.stamp = timestamp;
   header.frame_id = frame_id;
-
-  if (compress_image) {
-    auto img_msg = cv_bridge::CvImage(header, encoding, img).toCompressedImageMsg();
-  } else {
-    auto img_msg = cv_bridge::CvImage(header, encoding, img).toImageMsg();
-  }
-
   rclcpp::SerializedMessage serialized_msg;
 
   if (compress_image) {
+    auto img_msg = cv_bridge::CvImage(header, encoding, img).toCompressedImageMsg();
     compressed_serializer_.serialize_message(img_msg.get(), &serialized_msg);
     bag.write(serialized_msg, topic_name + "/compressed", "sensor_msgs/msg/CompressedImage", timestamp);
     return;
+  } else {
+    auto img_msg = cv_bridge::CvImage(header, encoding, img).toImageMsg();
+    image_serializer_.serialize_message(img_msg.get(), &serialized_msg);
+    bag.write(serialized_msg, topic_name, "sensor_msgs/msg/Image", timestamp);
   }
-  image_serializer_.serialize_message(img_msg.get(), &serialized_msg);
-  bag.write(serialized_msg, topic_name, "sensor_msgs/msg/Image", timestamp);
 }
 
 void GoProVideoExtractor::writeVideo(const std::string& bag_file,
@@ -542,35 +611,56 @@ void GoProVideoExtractor::writeVideo(const std::string& bag_file,
   double global_clock;
   uint64_t global_video_pkt_pts = AV_NOPTS_VALUE;
 
-  int frameFinished;
+  // int frameFinished;
   uint64_t seq = 0;
   while (av_read_frame(pFormatContext, &packet) >= 0) {
     // Is this a packet from the video stream?
     if (packet.stream_index == videoStreamIndex) {
       // Decode video frame
-      avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
+      // avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
 
-      // Did we get a video frame?
-
-      if (packet.dts != AV_NOPTS_VALUE) {
-        global_clock = av_frame_get_best_effort_timestamp(pFrame);
-        global_video_pkt_pts = packet.pts;
-      } else if (global_video_pkt_pts && global_video_pkt_pts != AV_NOPTS_VALUE) {
-        global_clock = global_video_pkt_pts;
-      } else {
-        global_clock = 0;
+      // ---------------------------
+      // New API: send packet
+      // ---------------------------
+      int ret = avcodec_send_packet(pCodecContext, &packet);
+      if (ret < 0) {
+        RCLCPP_ERROR_STREAM(logger, "Error sending packet for decoding: " << ret);
+        av_packet_unref(&packet);
+        continue;
       }
 
-      double frame_delay = av_q2d(video_stream->time_base);
-      global_clock *= frame_delay;
+      // ---------------------------
+      // New API: receive frames
+      // ---------------------------
+      while (ret >= 0) {
+        ret = avcodec_receive_frame(pCodecContext, pFrame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+          break; // need more packets or end of stream
+        } else if (ret < 0) {
+          RCLCPP_ERROR_STREAM(logger, "Error during decoding: " << ret);
+          break;
+        }
 
-      // Only if we are repeating the
-      if (pFrame->repeat_pict > 0) {
-        double extra_delay = pFrame->repeat_pict * (frame_delay * 0.5);
-        global_clock += extra_delay;
-      }
+        // Did we get a video frame?
+        if (packet.dts != AV_NOPTS_VALUE) {
+          global_clock = pFrame->best_effort_timestamp;
+          global_video_pkt_pts = packet.pts;
+        } else if (global_video_pkt_pts && global_video_pkt_pts != AV_NOPTS_VALUE) {
+          global_clock = global_video_pkt_pts;
+        } else {
+          global_clock = 0;
+        }
 
-      if (frameFinished) {
+        double frame_delay = av_q2d(video_stream->time_base);
+        global_clock *= frame_delay;
+
+        // Only if we are repeating the
+        if (pFrame->repeat_pict > 0) {
+          double extra_delay = pFrame->repeat_pict * (frame_delay * 0.5);
+          global_clock += extra_delay;
+        }
+
+      // if (frameFinished) {
         // Convert the image from its native format to RGB
         sws_scale(sws_ctx,
                   (uint8_t const* const*)pFrame->data,
@@ -654,35 +744,55 @@ void GoProVideoExtractor::writeVideo(rosbag2_cpp::Writer& bag,
   double global_clock;
   uint64_t global_video_pkt_pts = AV_NOPTS_VALUE;
 
-  int frameFinished;
+  // int frameFinished;
   uint32_t frame_count = 0;
   while (av_read_frame(pFormatContext, &packet) >= 0) {
     // Is this a packet from the video stream?
     if (packet.stream_index == videoStreamIndex) {
       // Decode video frame
-      avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
-
-      // Did we get a video frame?
-
-      if (packet.dts != AV_NOPTS_VALUE) {
-        global_clock = av_frame_get_best_effort_timestamp(pFrame);
-        global_video_pkt_pts = packet.pts;
-      } else if (global_video_pkt_pts && global_video_pkt_pts != AV_NOPTS_VALUE) {
-        global_clock = global_video_pkt_pts;
-      } else {
-        global_clock = 0;
+      // avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
+      
+      // ---------------------------
+      // New API: send packet
+      // ---------------------------
+      int ret = avcodec_send_packet(pCodecContext, &packet);
+      if (ret < 0) {
+        RCLCPP_ERROR_STREAM(logger, "Error sending packet for decoding: " << ret);
+        av_packet_unref(&packet);
+        continue;
       }
 
-      double frame_delay = av_q2d(video_stream->time_base);
-      global_clock *= frame_delay;
+      // ---------------------------
+      // New API: receive frames
+      // ---------------------------
+      while (ret >= 0) {
+        ret = avcodec_receive_frame(pCodecContext, pFrame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+          break; // need more packets or end of stream
+        } else if (ret < 0) {
+          RCLCPP_ERROR_STREAM(logger, "Error during decoding: " << ret);
+          break;
+        }
 
-      // Only if we are repeating the
-      if (pFrame->repeat_pict > 0) {
-        double extra_delay = pFrame->repeat_pict * (frame_delay * 0.5);
-        global_clock += extra_delay;
-      }
+        if (packet.dts != AV_NOPTS_VALUE) {
+          global_clock = pFrame->best_effort_timestamp;
+          global_video_pkt_pts = packet.pts;
+        } else if (global_video_pkt_pts && global_video_pkt_pts != AV_NOPTS_VALUE) {
+          global_clock = global_video_pkt_pts;
+        } else {
+          global_clock = 0;
+        }
 
-      if (frameFinished) {
+        double frame_delay = av_q2d(video_stream->time_base);
+        global_clock *= frame_delay;
+
+        // Only if we are repeating the
+        if (pFrame->repeat_pict > 0) {
+          double extra_delay = pFrame->repeat_pict * (frame_delay * 0.5);
+          global_clock += extra_delay;
+        }
+
+      // if (frameFinished) {
         // Convert the image from its native format to RGB
         sws_scale(sws_ctx,
                   (uint8_t const* const*)pFrame->data,
@@ -776,27 +886,49 @@ void GoProVideoExtractor::writeVideo(rosbag2_cpp::Writer& bag,
   double global_clock;
   uint64_t global_video_pkt_pts = AV_NOPTS_VALUE;
 
-  int frameFinished;
+  // int frameFinished;
   uint32_t frame_count = 0;
   while (av_read_frame(pFormatContext, &packet) >= 0) {
     // Is this a packet from the video stream?
     if (packet.stream_index == videoStreamIndex) {
       // Decode video frame
-      avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
+      // avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
 
-      if (frame_count == image_stamps.size()) {
-        RCLCPP_WARN_STREAM(logger(),
-                   "Number of images does not match number of timestamps. "
-                   "This should only happen in last/single GoPro Video !!");
-
-        RCLCPP_WARN_STREAM(logger,
-                   "Skipping " << num_frames - image_stamps.size() << "/" << num_frames
-                   << " images");
-        break;
+      // ---------------------------
+      // New API: send packet
+      // ---------------------------
+      int ret = avcodec_send_packet(pCodecContext, &packet);
+      if (ret < 0) {
+        RCLCPP_ERROR_STREAM(logger, "Error sending packet for decoding: " << ret);
+        av_packet_unref(&packet);
+        continue;
       }
-      // Did we get a video frame?
 
-      if (frameFinished) {
+      // ---------------------------
+      // New API: receive frames
+      // ---------------------------
+      while (ret >= 0) {
+        ret = avcodec_receive_frame(pCodecContext, pFrame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+          break; // need more packets or end of stream
+        } else if (ret < 0) {
+          RCLCPP_ERROR_STREAM(logger, "Error during decoding: " << ret);
+          break;
+        }
+
+        if (frame_count == image_stamps.size()) {
+          RCLCPP_WARN_STREAM(logger,
+                    "Number of images does not match number of timestamps. "
+                    "This should only happen in last/single GoPro Video !!");
+
+          RCLCPP_WARN_STREAM(logger,
+                    "Skipping " << num_frames - image_stamps.size() << "/" << num_frames
+                    << " images");
+          break;
+        }
+        // Did we get a video frame?
+
+        // if (frameFinished) {
         // Convert the image from its native format to RGB
         sws_scale(sws_ctx,
                   (uint8_t const* const*)pFrame->data,
@@ -827,7 +959,6 @@ void GoProVideoExtractor::writeVideo(rosbag2_cpp::Writer& bag,
         writeImageToBag(bag, img, image_topic, ros2_time, "gopro", encoding, compress_image);
         frame_count++;
       }
-
       double percent = (double)frame_count / (double)num_frames;
       progress.write(percent);
     }
@@ -849,6 +980,7 @@ int GoProVideoExtractor::extractFrames(const std::string& image_folder,
                                        const std::vector<uint64_t> image_stamps,
                                        bool grayscale,
                                        bool display_images) {
+  auto logger = rclcpp::get_logger("gopro_frame_extractor");
   ProgressBar progress(std::clog, 80u, "Progress");
 
   std::string image_data_folder = image_folder + "/data";
@@ -887,26 +1019,41 @@ int GoProVideoExtractor::extractFrames(const std::string& image_folder,
 
   //	std::cout << "Video Creation Time: " << uint64_to_string(start_time) << std::endl;
 
-  int frameFinished;
+  // int frameFinished;
   uint32_t frame_count = 0;
   while (av_read_frame(pFormatContext, &packet) >= 0) {
     // Is this a packet from the video stream?
     if (packet.stream_index == videoStreamIndex) {
       // Decode video frame
-      avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
+      // avcodec_decode_video2(pCodecContext, pFrame, &frameFinished, &packet);
 
-      if (frame_count == image_stamps.size()) {
-        ROS_WARN_STREAM(
-            "Number of images does not match number of timestamps. This should only happen in "
-            "last/single GoPro Video !!");
-        ROS_WARN_STREAM("Skipping " << num_frames - image_stamps.size() << "/" << num_frames
-                                    << " images");
-        break;
+      int ret = avcodec_send_packet(pCodecContext, &packet);
+      if (ret < 0) {
+        RCLCPP_ERROR_STREAM(logger, "Error sending packet for decoding: " << ret);
+        av_packet_unref(&packet);
+        continue;
       }
 
-      // Did we get a video frame?
+      while (ret >= 0) {
+        ret = avcodec_receive_frame(pCodecContext, pFrame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+          break; // need more packets or end of stream
+        } else if (ret < 0) {
+          RCLCPP_ERROR_STREAM(logger, "Error during decoding: " << ret);
+          break;
+        }
 
-      if (frameFinished) {
+        if (frame_count == image_stamps.size()) {
+          RCLCPP_WARN_STREAM(logger,
+              "Number of images does not match number of timestamps. This should only happen in "
+              "last/single GoPro Video !!");
+          RCLCPP_WARN_STREAM(logger, \
+              "Skipping " << (num_frames - image_stamps.size()) << "/" << num_frames << " images");
+          break;
+        }
+
+        // Did we get a video frame?
+
         // Convert the image from its native format to RGB
         sws_scale(sws_ctx,
                   (uint8_t const* const*)pFrame->data,

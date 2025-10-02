@@ -22,6 +22,7 @@
 #include "ImuExtractor.h"
 
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/logging.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <std_msgs/msg/header.hpp>
 

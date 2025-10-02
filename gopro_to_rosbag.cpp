@@ -4,6 +4,7 @@
 
 
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/logging.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/magnetic_field.hpp>
 #include <std_msgs/msg/header.hpp>
@@ -74,7 +75,7 @@ int main(int argc, char* argv[]) {
   // infer bag config from rosbag file name
   BagConfig cfg = infer_bag_config(rosbag);
 
-  rosbag2_cpp::Writer bagnfer;
+  rosbag2_cpp::Writer bag;
   rosbag2_storage::StorageOptions storage_options;
   storage_options.uri = cfg.uri;
   storage_options.storage_id = cfg.storage_id;  // e.g., "sqlite3" or "mcap"
