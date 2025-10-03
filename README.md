@@ -1,12 +1,12 @@
-# gopro_ros
+# gopro_ros2
 
-This repository contains code for parsing GoPro telemetry metadata to obtain GoPro images with synchronized IMU measurements. The GoPro visual-inertial data can then be saved in [rosbag](http://wiki.ros.org/rosbag) or [Euroc](https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets) format. Thus, effectively paving the way for visual-inertial odometry/SLAM for GoPro cameras.
+This repository contains code for parsing GoPro telemetry metadata to obtain GoPro images with synchronized IMU measurements. The GoPro visual-inertial data can then be saved in [ros2 bag](http://wiki.ros.org/rosbag) or [EuRoC](https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets) format. Thus, effectively paving the way for visual-inertial odometry/SLAM for GoPro cameras.
 
 This repository use [gpmf-parser](https://github.com/gopro/gpmf-parser)  from [GoPro](https://gopro.com) to extract metadata and timing information from GoPro cameras.
 
 ## Related Paper
-If you find the code useful in your research, please cite our paper
-```
+If you find the code useful in your research, please cite our paper:
+```bash
 @inproceedings{joshi_gopro_icra_2022,
   author      = {Bharat Joshi and Marios Xanthidis and Sharmin Rahman and Ioannis Rekleitis},
   title       = {High Definition, Inexpensive, Underwater Mapping},
@@ -22,81 +22,79 @@ If you find the code useful in your research, please cite our paper
 
 # Installation
 
-Tested on Ubuntu 18.04 (ros-melodic) & 20.04 (ros-noetic). The install instructions are for Ubuntu 18.04.
+Tested on Ubuntu 24.04 (ROS2-Jazzy).
 
 ## Prerequisites
 
-- ros-melodic-desktop-full
-- [OpenCV](https://github.com/opencv/opencv) >= 3.2
-- [FFmpeg](http://ffmpeg.org/)
+- ros-jazzy-desktop-full
+- [OpenCV](https://github.com/opencv/opencv) >= 4.6
+- [FFmpeg](http://ffmpeg.org/) >= 6.1.1
 - [Eigen3](http://eigen.tuxfamily.org/index.php?title=Main_Page)
 
 ## Install Dependencies
 
-- Install ROS using [this guide](http://wiki.ros.org/ROS/Installation)
-
-- System installation of OpenCV should work
+- First install ROS2 using [this guide](https://docs.ros.org/en/jazzy/Installation.html).
 
 ```bash
-sudo apt install libopencv-dev
-```
+# First update package list
+sudo apt-get update
 
-- Install FFmpeg
+# ROS 2 dependencies
+sudo apt-get install -y \
+    ros-$ROS_DISTRO-rosbag2-cpp \
+    ros-$ROS_DISTRO-rosbag2-storage-default-plugins \
 
-```bash
-sudo apt install ffmpeg
-```
-
-- Install Eigen3
-
-```bash
-sudo apt install libeigen3-dev
+# System libraries
+sudo apt-get install -y \
+    libeigen3-dev \
+    libopencv-dev \
+    ffmpeg
 ```
 
 ## Install gopro_ros
 
-Before proceeding, ensure all dependencies are installed. To install gopro_ros
+Before proceeding, ensure all dependencies are installed. To install gopro_ros2 (currently save to bag file only):
 
 ```bash
-mkdir -p ~/gopro_ws/src
-cd gopro_ws/src
-git clone https://github.com/joshi-bharat/gopro_ros.git
-cd ~/gopro_ws/
-catkin_make
-source ~/gopro_ws/devel/setup.bash
-# add this to ~/.bashrc to make this permanent 
+mkdir -p ~/gopro_ros2_ws/src
+cd gopro_ros2_ws/src
+git clone https://github.com/Alexander-guo/gopro_ros2.git
+cd ~/gopro_ros2_ws
+colcon build --packages-select gopro_ros2 --symlink-install --cmake-args -DBUILD_GOPRO_TO_ASL OFF
+source ~/gopro_ros2_ws/install/setup.bash # Or add this to ~/.bashrc to make it permanent
 ```
 
 # Usage
 
 GoPro splits video into smaller chunks. By splitting up the video it reduces the chance of you losing all your footage if the file gets corrupted somehow. It’s called chaptering, and the idea is that if one chapter gets corrupted the others should still be okay because they’re separate files.
 
-## Save to rosbag
+## Save to ROS2 bag
 
-To save GoPro video with IMU measurements to rosbag:
+Both storage backends, MCAP(.mcap) and SQLite3(.db3), are supported and automatically identified by the suffix of `<bag_file>` for `rosbag` argument. To save GoPro video with IMU measurements to ros2 bag:
 
 ```bash
-roslaunch gopro_ros gopro_to_rosbag.launch gopro_video:=<gopro_video_file> rosbag:=<bag_file>
+ros2 launch gopro_ros2 gopro_to_rosbag.xml gopro_video:=<gopro_video_file> rosbag:=<bag_file>
 ```
 
 If you have multiple files from a single session, put all videos in same folder you can use the following command to concatenate into a single rosbag:
 
 ```bash
-roslaunch gopro_ros gopro_to_rosbag.launch gopro_folder:=<folder_with_gopro_video_files> multiple_files:=true rosbag:=<bag_file>
+ros2 launch gopro_ros2 gopro_to_rosbag.xml gopro_folder:=<folder_with_gopro_video_files> multiple_files:=true rosbag:=<bag_file>
 ```
 
-## Save in Euroc format
+## Save to EuRoC format
 
 To save GoPro video with IMU measurements in Euroc format:
 
 ```bash
-roslaunch gopro_ros gopro_to_rosbag.launch gopro_video:=<gopro_video_file> asl_dir:=<asl_format_dir>
+ros2 launch gopro_ros2 gopro_to_asl.xml gopro_video:=<gopro_video_file> asl_dir:=<asl_format_dir>
 ```
 
 If you have multiple files from a single session, put all videos in same folder you can use the following command extract all videos in a single folder:
 
 ```bash
-roslaunch gopro_ros gopro_to_rosbag.launch gopro_folder:=<folder_with_gopro_video_files> multiple_files:=true asl_dir:=<asl_format_dir>
+ros2 launch gopro_ros2 gopro_to_asl.xml gopro_folder:=<folder_with_gopro_video_files> multiple_files:=true asl_dir:=<asl_format_dir>
 ```
+
 # TODO:
-Extraction video takes a lot of time. Implement multi-threaded.
+Enable save into EuRoC format.

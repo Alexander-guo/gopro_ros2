@@ -1,7 +1,7 @@
 <package format="3">
   <name>gopro_ros2</name>
   <version>0.0.1</version>
-  <description>GoPro Video information extractor.</description>
+  <description>GoPro video information extractor and save to ROS2 bag.</description>
 
   <maintainer email="bjoshi@email.sc.edu">Bharat Joshi</maintainer>
   <author email="bjoshi@email.sc.edu">Bharat Joshi</author>
