@@ -5,7 +5,9 @@ This repository contains code for parsing GoPro telemetry metadata to obtain GoP
 This repository use [gpmf-parser](https://github.com/gopro/gpmf-parser)  from [GoPro](https://gopro.com) to extract metadata and timing information from GoPro cameras.
 
 ## Related Paper
+
 If you find the code useful in your research, please cite our paper:
+
 ```bash
 @inproceedings{joshi_gopro_icra_2022,
   author      = {Bharat Joshi and Marios Xanthidis and Sharmin Rahman and Ioannis Rekleitis},
@@ -51,7 +53,7 @@ sudo apt-get install -y \
     ffmpeg
 ```
 
-## Install gopro_ros
+## Install gopro_ros2
 
 Before proceeding, ensure all dependencies are installed. To install gopro_ros2 (currently save to bag file only):
 
@@ -96,5 +98,6 @@ If you have multiple files from a single session, put all videos in same folder 
 ros2 launch gopro_ros2 gopro_to_asl.xml gopro_folder:=<folder_with_gopro_video_files> multiple_files:=true asl_dir:=<asl_format_dir>
 ```
 
-# TODO:
+# TODO
+
 Enable save into EuRoC format.
