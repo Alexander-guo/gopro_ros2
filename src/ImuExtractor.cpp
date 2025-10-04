@@ -21,9 +21,10 @@
 
 #include "ImuExtractor.h"
 
-#include <ros/ros.h>
-#include <sensor_msgs/Imu.h>
-#include <std_msgs/Header.h>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp/logging.hpp>
+#include <sensor_msgs/msg/imu.hpp>
+#include <std_msgs/msg/header.hpp>
 
 #include <cstdlib>
 #include <experimental/filesystem>
@@ -479,9 +480,12 @@ void GoProImuExtractor::getPayloadStamps(uint32_t fourcc,
 
 void GoProImuExtractor::skipPayloads(uint32_t num_payloads) { payloads_skipped = num_payloads; }
 
-void GoProImuExtractor::writeImuData(rosbag::Bag& bag,
+void GoProImuExtractor::writeImuData(rosbag2_cpp::Writer& bag,
                                      uint64_t end_time,
                                      const std::string& imu_topic) {
+  auto logger = rclcpp::get_logger("gopro_IMU_writer");
+  rclcpp::Serialization<sensor_msgs::msg::Imu> imu_serializer;
+
   uint64_t first_frame_us, first_frame_ns;
   vector<vector<double>> accl_data;
   vector<vector<double>> gyro_data;
@@ -490,7 +494,6 @@ void GoProImuExtractor::writeImuData(rosbag::Bag& bag,
 
   vector<uint64_t> steps;
   uint64_t total_samples = 0;
-  uint64_t seq = 0;
 
   for (uint32_t index = 0; index < payloads; index++) {
     GPMF_ERR ret;
@@ -554,17 +557,19 @@ void GoProImuExtractor::writeImuData(rosbag::Bag& bag,
 
         uint32_t secs = current_stamp * 1e-9;
         uint32_t n_secs = current_stamp % 1000000000;
-        ros::Time ros_time(secs, n_secs);
 
-        std_msgs::Header header;
+        builtin_interfaces::msg::Time ros_time;
+        ros_time.sec = secs;
+        ros_time.nanosec = n_secs;
+
+        std_msgs::msg::Header header;
         header.stamp = ros_time;
         header.frame_id = "gopro";
-        header.seq = seq++;
 
         vector<double> gyro_sample = gyro_data.at(i);
         vector<double> accl_sample = accl_data.at(i);
 
-        sensor_msgs::Imu imu_msg;
+        sensor_msgs::msg::Imu imu_msg;
         imu_msg.header = header;
         // Data comes in ZXY order
         imu_msg.angular_velocity.x = gyro_sample.at(1);
@@ -574,7 +579,13 @@ void GoProImuExtractor::writeImuData(rosbag::Bag& bag,
         imu_msg.linear_acceleration.y = accl_sample.at(2);
         imu_msg.linear_acceleration.z = accl_sample.at(0);
 
-        bag.write(imu_topic, ros_time, imu_msg);  // Write to bag
+        // Serialize
+        rclcpp::SerializedMessage imu_serialized_msg;
+        imu_serializer.serialize_message(&imu_msg, &imu_serialized_msg);
+
+        // convert builtin_interfaces::msg::Time to rclcpp::Time
+        rclcpp::Time ros2_time(ros_time.sec, ros_time.nanosec);
+        bag.write(imu_serialized_msg, "/gopro/imu", "sensor_msgs/msg/Imu", ros2_time);
 
         // Letting one extra imu stamp
         if ((current_stamp - movie_creation_time) > end_time) break;
@@ -618,6 +629,7 @@ void GoProImuExtractor::readImuData(std::deque<AcclMeasurement>& accl_queue,
                                     std::deque<GyroMeasurement>& gyro_queue,
                                     uint64_t accl_end_time,
                                     uint64_t gyro_end_time) {
+  auto logger = rclcpp::get_logger("gopro_IMU_reader");
   vector<vector<double>> accl_data;
   vector<vector<double>> gyro_data;
 
@@ -645,9 +657,9 @@ void GoProImuExtractor::readImuData(std::deque<AcclMeasurement>& accl_queue,
     if (current_gyro_stamp != current_accl_stamp) {
       int32_t diff = current_gyro_stamp - current_accl_stamp;
       if (abs(diff) > 100) {
-        ROS_WARN_STREAM("ACCL and GYRO timestamp slightly un-synchronized ....");
-        ROS_WARN_STREAM("Index: " << index << " accl stamp: " << current_accl_stamp
-                                  << " gyro stamp: " << current_gyro_stamp << " diff: " << diff);
+        RCLCPP_WARN_STREAM(logger, "ACCL and GYRO timestamp slightly un-synchronized ....");
+        RCLCPP_WARN_STREAM(logger, "Index: " << index << " accl stamp: " << current_accl_stamp
+                                                 << " gyro stamp: " << current_gyro_stamp << " diff: " << diff);
       }
     }
 
@@ -719,7 +731,7 @@ void GoProImuExtractor::readImuData(std::deque<AcclMeasurement>& accl_queue,
     double gyro_step_size = (double)gyro_time_span / (double)gyro_data.size();
 
     if (accl_data.size() != gyro_data.size()) {
-      ROS_WARN_STREAM("ACCL and GYRO data must be of same size");
+      RCLCPP_WARN_STREAM(logger, "ACCL and GYRO data must be of same size; ACCL data size: " << accl_data.size() << " GYRO data size: " << gyro_data.size());
     }
 
     for (uint32_t i = 0; i < accl_data.size(); i++) {

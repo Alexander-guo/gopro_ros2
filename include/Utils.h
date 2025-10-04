@@ -15,6 +15,25 @@ uint64_t parseISO(const std::string& iso_date);
 std::string uint64_to_string(uint64_t value);
 uint64_t get_offset_1904();
 
+struct BagConfig {
+  std::string uri;
+  std::string storage_id;
+};
+
+/**
+ * @brief Infer storage_id and normalized bag file path
+ * 
+ * Rules:
+ *   - ".mcap"  → storage_id = "mcap"
+ *   - ".db3"   → storage_id = "sqlite3"
+ *   - no ext   → default storage_id = "sqlite3" and ".db3" is appended
+ *   - unknown ext → storage_id = "sqlite3"
+ * 
+ * @param bag_path input path (may or may not have extension)
+ * @return BagConfig containing uri and storage_id
+ */
+BagConfig infer_bag_config(const std::string &bag_path);
+
 class ProgressBar {
 private:
   static const auto overhead = sizeof " [100%]";

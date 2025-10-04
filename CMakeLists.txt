@@ -1,49 +1,107 @@
-cmake_minimum_required(VERSION 3.10)
-project(gopro_ros)
+cmake_minimum_required(VERSION 3.8) 
+project(gopro_ros2) 
 
-set(CMAKE_CXX_STANDARD 14)
-
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
-
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib) 
 LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
 
-find_package(catkin REQUIRED COMPONENTS cv_bridge geometry_msgs rosbag
-    roscpp sensor_msgs std_msgs )
-
-catkin_package(
-		INCLUDE_DIRS include
-		CATKIN_DEPENDS cv_bridge geometry_msgs rosbag roscpp sensor_msgs std_msgs
-		LIBRARIES ${PROJECT_NAME}
-)
-
+# ===========================
+# Dependencies
+# ===========================
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(rosbag2_cpp REQUIRED)
 find_package(ffmpeg REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(Eigen3 3 REQUIRED)
+find_package(Eigen3 REQUIRED)
 
-if(FFMPEG_FOUND)
-    message("Found FFMPEG/LibAV libraries")
-else()
-    message("Can't find libavcodec, libavformat or libavutil. Add them!")
+# ===========================
+# Build Common Library
+# ===========================
+# Gather all .cpp and .c files in src/
+file(GLOB GOPRO_SRC_FILES "src/*.cpp" "src/*.c")
+add_library(${PROJECT_NAME}
+  ${GOPRO_SRC_FILES}
+)
+
+target_include_directories(${PROJECT_NAME} 
+  PUBLIC 
+    include
+    ${FFMPEG_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIRS}
+)
+
+ament_target_dependencies(${PROJECT_NAME}
+  rclcpp
+  sensor_msgs
+  std_msgs
+  geometry_msgs
+  cv_bridge
+  rosbag2_cpp
+)
+
+target_link_libraries(${PROJECT_NAME}
+  ${FFMPEG_LIBRARIES}
+  ${OpenCV_LIBS}
+  stdc++fs
+)
+
+# ===========================
+# Executable
+# ===========================
+option(BUILD_GOPRO_TO_ASL "Build gopro_to_asl executable" OFF)
+
+if(BUILD_GOPRO_TO_ASL)
+  add_executable(gopro_to_asl gopro_to_asl.cpp)
+  ament_target_dependencies(gopro_to_asl 
+    rclcpp
+    sensor_msgs
+    std_msgs
+    geometry_msgs
+    cv_bridge
+    rosbag2_cpp
+  )
+  target_link_libraries(gopro_to_asl 
+    ${PROJECT_NAME}
+  )
+
+  install(TARGETS gopro_to_asl DESTINATION lib/${PROJECT_NAME})
 endif()
 
-include_directories(
-    include 
-    ${catkin_INCLUDE_DIRS}
-    ${FMPEG_INCLUDE_DIRS}
-    ${OpenCV_INCLUDE_DIRS}
-    ${EIGEN3_INCLUDE_DIR}
-    )
-
-
-file(GLOB c_src "src/*.c")
-file(GLOB cpp_src "src/*.cpp")
-
-add_library(${PROJECT_NAME} SHARED ${c_src} ${cpp_src})
-target_link_libraries(${PROJECT_NAME} PRIVATE ${catkin_LIBRARIES} ${FFMPEG_LIBRARIES} ${OpenCV_LIBS}  -lstdc++fs)
-
-add_executable(gopro_to_asl gopro_to_asl.cpp)
-target_link_libraries(gopro_to_asl ${PROJECT_NAME} ${catkin_LIBRARIES})
-
 add_executable(gopro_to_rosbag gopro_to_rosbag.cpp)
-target_link_libraries(gopro_to_rosbag ${PROJECT_NAME} ${catkin_LIBRARIES})
+ament_target_dependencies(gopro_to_rosbag 
+  rclcpp
+  sensor_msgs
+  std_msgs
+  geometry_msgs
+  cv_bridge
+  rosbag2_cpp
+)
+target_link_libraries(gopro_to_rosbag 
+  ${PROJECT_NAME}
+)
 
+# ===========================
+# Install
+# ===========================
+install(TARGETS 
+  gopro_to_rosbag
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY include/
+  DESTINATION include
+)
+
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+ament_package()

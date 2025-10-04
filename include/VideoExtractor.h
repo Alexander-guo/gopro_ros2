@@ -7,13 +7,16 @@
 extern "C" {
 
 #include <libavcodec/avcodec.h>
+#include <libavcodec/codec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 }
 
-#include <rosbag/bag.h>
+#include <rosbag2_cpp/writer.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/compressed_image.hpp>
 
 #include <cstdio>
 #include <opencv2/opencv.hpp>
@@ -28,7 +31,7 @@ private:
   AVFormatContext* pFormatContext = NULL;
   uint32_t videoStreamIndex;
   AVCodecContext* pCodecContext = NULL;
-  AVCodec* pCodec = NULL;
+  const AVCodec* pCodec = NULL;
   AVFrame* pFrame = NULL;
   AVFrame* pFrameRGB = NULL;
   AVPacket packet;
@@ -43,6 +46,19 @@ private:
   uint32_t image_width;
   uint32_t image_height;
   uint32_t num_frames;
+  rclcpp::Serialization<sensor_msgs::msg::Image> image_serializer_;
+  rclcpp::Serialization<sensor_msgs::msg::CompressedImage> compressed_serializer_;
+
+  // Reusable helper to write an OpenCV frame to a ROS2 bag
+  void writeImageToBag(
+    rosbag2_cpp::Writer & bag,
+    const cv::Mat & img,
+    const std::string & topic_name,
+    const rclcpp::Time & timestamp,
+    const std::string & frame_id = "camera",
+    const std::string & encoding = "bgr8",
+    bool compress_image = false
+  ) const;
 
 public:
   GoProVideoExtractor(const std::string file, double scaling_factor = 1.0, bool dump_info = false);
@@ -68,14 +84,14 @@ public:
   void writeVideo(const std::string& bag_file,
                   uint64_t last_image_stamp_ns,
                   const std::string& image_topic);
-  void writeVideo(rosbag::Bag& bag,
+  void writeVideo(rosbag2_cpp::Writer& bag,
                   uint64_t last_image_stamp_ns,
                   const std::string& image_topic,
                   bool grayscale = false,
                   bool compress_image = false,
                   bool display_images = false);
 
-  void writeVideo(rosbag::Bag& bag,
+  void writeVideo(rosbag2_cpp::Writer& bag,
                   const std::string& image_topic,
                   const std::vector<uint64_t> image_stamps,
                   bool grayscale,
