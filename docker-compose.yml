@@ -1,0 +1,42 @@
+services:
+  gopro_ros2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+        USERNAME: ${USER:-root}
+    image: gopro_ros2
+    container_name: gopro_ros2
+    privileged: true
+    network_mode: host
+    pid: host
+    ipc: host
+
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
+      - TZ=Etc/UTC
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
+
+      # Safe defaults: no DISPLAY if missing
+      - DISPLAY=${DISPLAY:-}
+      - QT_X11_NO_MITSHM=1
+
+      # XAUTHORITY only if it exists locally (Docker will ignore if missing)
+      - XAUTHORITY=/home/${USER}/.Xauthority
+
+    volumes:
+      # X11 forwarding for GUI tools like rviz, rqt, etc. (only matter if host uses X11)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/home/${USER}/.Xauthority:rw
+
+      # dataset mount, put your data into ./dataset
+      - ./dataset:/media/data:rw
+
+    user: root
+    command: [ "bash" ]
+    tty: true
+    stdin_open: true
+

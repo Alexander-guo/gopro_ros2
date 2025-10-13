@@ -1,0 +1,63 @@
+# ====================================================================
+# Base image
+# ====================================================================
+FROM osrf/ros:jazzy-desktop-full
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Etc/UTC \
+    LANG=C.UTF-8 LC_ALL=C.UTF-8 \
+    ROS_DISTRO=jazzy \
+    XDG_RUNTIME_DIR=/tmp/runtime-root
+
+# ====================================================================
+# Install system dependencies
+# ====================================================================
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    gcc-10 g++-10 \
+    build-essential cmake \
+    x11-apps mesa-utils libgl1 \
+    xterm vim gdb bash bash-completion wget curl unzip git tree \
+    ffmpeg \
+    libpcl-dev libgoogle-glog-dev libgflags-dev \
+    libblas-dev liblapack-dev libatlas-base-dev libeigen3-dev libsuitesparse-dev \
+    libopencv-dev libboost-dev libboost-filesystem-dev \
+    libcanberra-gtk-module libcanberra-gtk3-module \
+    python3-colcon-common-extensions \
+    ros-$ROS_DISTRO-pcl-ros \
+    ros-$ROS_DISTRO-tf2-sensor-msgs \
+    ros-$ROS_DISTRO-compressed-image-transport \
+    ros-$ROS_DISTRO-foxglove-bridge && \
+    rm -rf /var/lib/apt/lists/*
+
+# ====================================================================
+# Set GCC/G++ alternatives
+# ====================================================================
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 100
+
+# ====================================================================
+# Create workspace and clone repo
+# ====================================================================
+WORKDIR /ws
+RUN git clone https://github.com/Alexander-guo/gopro_ros2.git src/gopro_ros2
+
+# ====================================================================
+# Build the ROS2 workspace
+# ====================================================================
+RUN /bin/bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
+    colcon build --packages-select gopro_ros2 --symlink-install \
+    --cmake-args -DBUILD_GOPRO_TO_ASL=OFF -DCMAKE_BUILD_TYPE=Release"
+
+# ====================================================================
+# Shell environment setup
+# ====================================================================
+RUN echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> /etc/bash.bashrc && \
+    echo "source /ws/install/setup.bash" >> /etc/bash.bashrc && \
+    echo "alias SOURCE_WS='source /ws/install/setup.bash'" >> /etc/bash.bashrc && \
+    echo 'alias ROS_BUILD_RELEASE="colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=1"' >> /etc/bash.bashrc
+
+# ====================================================================
+# Default command
+# ====================================================================
+CMD ["bash"]
+
