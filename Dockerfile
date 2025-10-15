@@ -22,6 +22,15 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     libblas-dev liblapack-dev libatlas-base-dev libeigen3-dev libsuitesparse-dev \
     libopencv-dev libboost-dev libboost-filesystem-dev \
     libcanberra-gtk-module libcanberra-gtk3-module \
+    python3-pip \
+    python3-dev \
+    python3-setuptools \
+    python3-wheel \
+    build-essential \
+    python3-matplotlib \
+    python3-numpy \
+    python3-psutil \
+    python3-tk \
     python3-colcon-common-extensions \
     ros-$ROS_DISTRO-pcl-ros \
     ros-$ROS_DISTRO-tf2-sensor-msgs \
@@ -46,7 +55,7 @@ RUN git clone https://github.com/Alexander-guo/gopro_ros2.git src/gopro_ros2
 # ====================================================================
 RUN /bin/bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
     colcon build --packages-select gopro_ros2 --symlink-install \
-    --cmake-args -DBUILD_GOPRO_TO_ASL=OFF -DCMAKE_BUILD_TYPE=Release"
+    --cmake-args -DBUILD_GOPRO_TO_ASL=OFF"
 
 # ====================================================================
 # Shell environment setup

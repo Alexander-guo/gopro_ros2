@@ -1,3 +1,4 @@
+version: '3.8'
 services:
   gopro_ros2:
     build:
@@ -10,9 +11,16 @@ services:
     image: gopro_ros2
     container_name: gopro_ros2
     privileged: true
-    network_mode: host
-    pid: host
-    ipc: host
+
+    # On macOS/Windows, 'host' network mode isn't supported.
+    # Use conditional network setup.
+    network_mode: ${NETWORK_MODE:-bridge}
+    pid: ${PID_MODE:-host}
+    ipc: ${IPC_MODE:-host}
+
+    # Automatically detect correct platform, standard Intel/AMD 64-bit
+    # Override manually with: docker-compose build --build-arg PLATFORM=linux/amd64
+    platform: ${PLATFORM:-${DOCKER_DEFAULT_PLATFORM:-linux/amd64}} 
 
     environment:
       - DEBIAN_FRONTEND=noninteractive
@@ -39,4 +47,3 @@ services:
     command: [ "bash" ]
     tty: true
     stdin_open: true
-

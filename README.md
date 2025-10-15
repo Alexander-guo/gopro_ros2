@@ -1,16 +1,15 @@
 # Dockerized gopro_ros2
 
-This is the dockerized gopro_ros2 workspace, which makes the ROS2 package compatible with any host system.
+This is the dockerized gopro_ros2 workspace, which makes the ROS2 package compatible with any host system. It currently supports Linux `x86_64`/MacOS `x86_64` & `arm64`/Windows `x86_64`.
 
 ## Usage
 
 Before proceeding, ensure docker and docker compose are installed.
-
 ```bash
 git clone -b docker https://github.com/Alexander-guo/gopro_ros2.git
 cd gopro_ros2
-docker compose build
-docker compose up -d  # detached mode
+chmod +x compose-up.sh
+./compose-up.sh     # automatically detect the system and cpu architecture, use the correct one during build or run.
 ```
 
 To enter the docker container:
@@ -20,6 +19,7 @@ docker exec -it gopro_ros2 bash
 ```
 
 Put any GoPro videos you want to convert under `./dataset`, then you are able to refer the data via `/media/data` inside the container.
+
 
 ## Save to ROS2 bag
 
