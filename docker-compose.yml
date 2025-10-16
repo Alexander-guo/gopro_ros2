@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   gopro_ros2:
     build:
@@ -43,7 +42,6 @@ services:
       # dataset mount, put your data into ./dataset
       - ./dataset:/media/data:rw
 
-    user: root
     command: [ "bash" ]
     tty: true
     stdin_open: true

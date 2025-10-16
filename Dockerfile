@@ -10,6 +10,22 @@ ENV DEBIAN_FRONTEND=noninteractive \
     XDG_RUNTIME_DIR=/tmp/runtime-root
 
 # ====================================================================
+# Create non-root user matching host UID/GID (for volume access)
+# ====================================================================
+ARG USERNAME=root
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+# Create a user only if not root
+RUN if [ "$USERNAME" != "root" ]; then \
+      groupadd --gid $USER_GID $USERNAME && \
+      useradd --uid $USER_UID --gid $USER_GID -m $USERNAME && \
+      apt-get update && apt-get install -y sudo && \
+      echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME && \
+      chmod 0440 /etc/sudoers.d/$USERNAME; \
+    fi
+
+# ====================================================================
 # Install system dependencies
 # ====================================================================
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
@@ -48,6 +64,9 @@ RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 && \
 # Create workspace and clone repo
 # ====================================================================
 WORKDIR /ws
+RUN chown -R $USER_UID:$USER_GID /ws
+USER $USERNAME
+
 RUN git clone https://github.com/Alexander-guo/gopro_ros2.git src/gopro_ros2
 
 # ====================================================================
@@ -60,10 +79,15 @@ RUN /bin/bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
 # ====================================================================
 # Shell environment setup
 # ====================================================================
-RUN echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> /etc/bash.bashrc && \
-    echo "source /ws/install/setup.bash" >> /etc/bash.bashrc && \
-    echo "alias SOURCE_WS='source /ws/install/setup.bash'" >> /etc/bash.bashrc && \
-    echo 'alias ROS_BUILD_RELEASE="colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=1"' >> /etc/bash.bashrc
+#RUN echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> /etc/bash.bashrc && \
+#    echo "source /ws/install/setup.bash" >> /etc/bash.bashrc && \
+#    echo "alias SOURCE_WS='source /ws/install/setup.bash'" >> /etc/bash.bashrc && \
+#    echo 'alias ROS_BUILD_RELEASE="colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=1"' >> /etc/bash.bashrc
+
+RUN echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> $HOME/.bashrc && \
+    echo "source /ws/install/setup.bash" >> $HOME/.bashrc && \
+    echo "alias SOURCE_WS='source /ws/install/setup.bash'" >> $HOME/.bashrc && \
+    echo 'alias ROS_BUILD_RELEASE="colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=1"' >> $HOME/.bashrc
 
 # ====================================================================
 # Default command

@@ -8,7 +8,6 @@ Before proceeding, ensure docker and docker compose are installed.
 ```bash
 git clone -b docker https://github.com/Alexander-guo/gopro_ros2.git
 cd gopro_ros2
-mkdir dataset
 chmod +x compose-up.sh
 ./compose-up.sh     # automatically detect the system and cpu architecture, use the correct one during build or run.
 ```

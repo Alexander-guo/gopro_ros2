@@ -17,8 +17,20 @@ else
     exit 1
 fi
 
+export USER_UID=$(id -u)
+export USER_GID=$(id -g)
+export USER=$USER
+
+if [ ! -d "./dataset" ]; then
+  mkdir -p ./dataset
+  chown $(id -u):$(id -g) ./dataset
+  echo "✅ Created dataset folder owned by $(id -un)"
+else
+  echo "ℹ️ Dataset folder already exists"
+fi
+
 echo "🧩 Using environment file: $ENV_FILE"
-docker compose --env-file "$ENV_FILE" build --no-cache
+docker compose --env-file "$ENV_FILE" build
 
 docker compose up -d
 
