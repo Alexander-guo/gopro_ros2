@@ -18,7 +18,13 @@ ARG USER_GID=1000
 
 # Create a user only if not root
 RUN if [ "$USERNAME" != "root" ]; then \
-      groupadd --gid $USER_GID $USERNAME && \
+      if ! getent group ${USER_GID} >/dev/null; then \
+        groupadd --gid ${USER_GID} ${USERNAME}; \
+      else \
+        echo "GID ${USER_GID} already exists, reusing existing group"; \
+        group_name=$(getent group ${USER_GID} | cut -d: -f1); \
+        usermod --gid ${USER_GID} ${USERNAME} 2>/dev/null || true; \
+      fi && \
       useradd --uid $USER_UID --gid $USER_GID -m $USERNAME && \
       apt-get update && apt-get install -y sudo && \
       echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME && \
