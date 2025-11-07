@@ -229,6 +229,7 @@ int GoProVideoExtractor::extractFrames(const std::string& image_folder,
   image_stream << std::fixed << std::setprecision(19);
   image_stream << "#timestamp [ns],filename" << std::endl;
 
+  pFormatContext = avformat_alloc_context();
   if (avformat_open_input(&pFormatContext, video_file.c_str(), NULL, NULL) != 0) {
     std::cout << RED << "Could not open file" << video_file.c_str() << RESET << std::endl;
     return -1;
@@ -352,6 +353,7 @@ int GoProVideoExtractor::getFrameStamps(std::vector<uint64_t>& stamps) {
   ProgressBar progress(std::clog, 70u, "Progress", '#');
   stamps.clear();
 
+  pFormatContext = avformat_alloc_context();
   if (avformat_open_input(&pFormatContext, video_file.c_str(), NULL, NULL) != 0) {
     std::cout << RED << "Could not open file" << video_file.c_str() << RESET << std::endl;
   }
@@ -423,6 +425,7 @@ int GoProVideoExtractor::getFrameStamps(std::vector<uint64_t>& stamps) {
 
 void GoProVideoExtractor::displayImages() {
   auto logger = rclcpp::get_logger("gopro_frame_displayer");
+  pFormatContext = avformat_alloc_context();
   if (avformat_open_input(&pFormatContext, video_file.c_str(), NULL, NULL) != 0) {
     std::cout << RED << "Could not open file" << video_file.c_str() << RESET << std::endl;
     exit(1);
@@ -553,6 +556,7 @@ void GoProVideoExtractor::writeVideo(const std::string& bag_file,
 
   bag.open(storage_options, converter_options);
 
+  pFormatContext = avformat_alloc_context();
   if (avformat_open_input(&pFormatContext, video_file.c_str(), NULL, NULL) != 0) {
     RCLCPP_ERROR_STREAM(logger, "Could not open file" << video_file.c_str());
     return;
@@ -676,6 +680,7 @@ void GoProVideoExtractor::writeVideo(rosbag2_cpp::Writer& bag,
   ProgressBar progress(std::clog, 80u, "Progress");
   auto logger = rclcpp::get_logger("gopro_video_writer");
 
+  pFormatContext = avformat_alloc_context();
   if (avformat_open_input(&pFormatContext, video_file.c_str(), NULL, NULL) != 0) {
     RCLCPP_ERROR_STREAM(logger, "Could not open file" << video_file.c_str());
     return;
@@ -808,6 +813,7 @@ void GoProVideoExtractor::writeVideo(rosbag2_cpp::Writer& bag,
   ProgressBar progress(std::clog, 80u, "Progress");
   auto logger = rclcpp::get_logger("gopro_video_writer");
 
+  pFormatContext = avformat_alloc_context();
   if (avformat_open_input(&pFormatContext, video_file.c_str(), NULL, NULL) != 0) {
     RCLCPP_ERROR_STREAM(logger, "Could not open file" << video_file.c_str());
     return;
@@ -936,6 +942,7 @@ int GoProVideoExtractor::extractFrames(const std::string& image_folder,
   image_stream.open(image_file, std::ofstream::app);
   image_stream << std::fixed << std::setprecision(19);
 
+  pFormatContext = avformat_alloc_context();
   if (avformat_open_input(&pFormatContext, video_file.c_str(), NULL, NULL) != 0) {
     std::cout << RED << "Could not open file" << video_file.c_str() << RESET << std::endl;
     return -1;

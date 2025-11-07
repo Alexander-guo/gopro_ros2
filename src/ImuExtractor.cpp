@@ -429,26 +429,45 @@ int GoProImuExtractor::save_imu_stream(const std::string imu_file, uint64_t end_
 
 uint32_t GoProImuExtractor::getNumofSamples(uint32_t fourcc) {
   GPMF_stream find_stream;
+  uint32_t total_samples = 0;  // Initialize to 0
 
-  uint32_t total_samples;
-  while (GPMF_OK ==
-         GPMF_FindNext(ms,
-                       STR2FOURCC("STRM"),
-                       static_cast<GPMF_LEVELS>(GPMF_RECURSE_LEVELS |
-                                                GPMF_TOLERANT)))  // GoPro Hero5/6/7 Accelerometer)
-  {
-    if (GPMF_OK !=
-        GPMF_FindNext(ms, fourcc, static_cast<GPMF_LEVELS>(GPMF_RECURSE_LEVELS | GPMF_TOLERANT)))
-      continue;
+  // Iterate through all payloads to find if this fourcc exists
+  for (uint32_t index = 0; index < payloads; index++) {
+    GPMF_ERR ret;
+    uint32_t payload_size;
 
-    GPMF_CopyState(ms, &find_stream);
-    if (GPMF_OK == GPMF_FindPrev(&find_stream,
-                                 GPMF_KEY_TOTAL_SAMPLES,
-                                 static_cast<GPMF_LEVELS>(GPMF_CURRENT_LEVEL | GPMF_TOLERANT)))
-      total_samples = BYTESWAP32(*(uint32_t*)GPMF_RawData(&find_stream));
+    payload_size = GetPayloadSize(mp4, index);
+    payloadres = GetPayloadResource(mp4, payloadres, payload_size);
+    payload = GetPayload(mp4, payloadres, index);
+
+    if (payload == NULL) continue;
+    ret = GPMF_Init(ms, payload, payload_size);
+    if (ret != GPMF_OK) continue;
+
+    while (GPMF_OK ==
+           GPMF_FindNext(ms,
+                         STR2FOURCC("STRM"),
+                         static_cast<GPMF_LEVELS>(GPMF_RECURSE_LEVELS |
+                                                  GPMF_TOLERANT)))  // GoPro Hero5/6/7 Accelerometer)
+    {
+      if (GPMF_OK !=
+          GPMF_FindNext(ms, fourcc, static_cast<GPMF_LEVELS>(GPMF_RECURSE_LEVELS | GPMF_TOLERANT)))
+        continue;
+
+      GPMF_CopyState(ms, &find_stream);
+      if (GPMF_OK == GPMF_FindPrev(&find_stream,
+                                   GPMF_KEY_TOTAL_SAMPLES,
+                                   static_cast<GPMF_LEVELS>(GPMF_CURRENT_LEVEL | GPMF_TOLERANT)))
+        total_samples = BYTESWAP32(*(uint32_t*)GPMF_RawData(&find_stream));
+      
+      // Found it, return the total samples from first payload
+      GPMF_ResetState(ms);
+      return total_samples;
+    }
+    GPMF_ResetState(ms);
   }
-  GPMF_ResetState(ms);
-  return total_samples;
+  
+  return total_samples;  // Return 0 if not found
 }
 
 void GoProImuExtractor::getPayloadStamps(uint32_t fourcc,
