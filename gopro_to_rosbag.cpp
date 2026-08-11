@@ -33,6 +33,8 @@ int main(int argc, char* argv[]) {
   node->declare_parameter<std::string>("gopro_video", "");
   node->declare_parameter<std::string>("gopro_folder", "");
   node->declare_parameter<std::string>("rosbag", "");
+  node->declare_parameter<std::string>("storage_id", ".mcap");
+  node->declare_parameter<std::string>("mcap_compression", "zstd_fast");
   node->declare_parameter<double>("scale", 1.0);
   node->declare_parameter<bool>("compressed_image_format", false);
   node->declare_parameter<bool>("grayscale", false);
@@ -42,6 +44,8 @@ int main(int argc, char* argv[]) {
   std::string gopro_video;
   std::string gopro_folder;
   std::string rosbag;
+  std::string storage_id;
+  std::string mcap_compression;
   double scaling;
   bool compress_images;
   bool grayscale;
@@ -51,6 +55,8 @@ int main(int argc, char* argv[]) {
   node->get_parameter("gopro_video", gopro_video);
   node->get_parameter("gopro_folder", gopro_folder);
   node->get_parameter("rosbag", rosbag);
+  node->get_parameter("storage_id", storage_id);
+  node->get_parameter("mcap_compression", mcap_compression);
   node->get_parameter("scale", scaling);
   node->get_parameter("compressed_image_format", compress_images);
   node->get_parameter("grayscale", grayscale);
@@ -72,13 +78,30 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  // infer bag config from rosbag file name
-  BagConfig cfg = infer_bag_config(rosbag);
+  if (storage_id != ".db3" && storage_id != ".mcap") {
+    RCLCPP_WARN(node->get_logger(), "Invalid storage_id '%s'. Falling back to '.mcap'.", storage_id.c_str());
+    storage_id = ".mcap";
+  }
+
+  BagConfig cfg = infer_bag_config(rosbag, storage_id);
 
   rosbag2_cpp::Writer bag;
   rosbag2_storage::StorageOptions storage_options;
   storage_options.uri = cfg.uri;
-  storage_options.storage_id = cfg.storage_id;  // e.g., "sqlite3" or "mcap"
+  storage_options.storage_id = cfg.storage_id;
+
+  if (cfg.storage_id == "mcap") {
+    if (mcap_compression != "zstd_fast" &&
+        mcap_compression != "zstd_small" &&
+        mcap_compression != "none") {
+      RCLCPP_WARN(
+          node->get_logger(),
+          "Invalid mcap_compression '%s'. Falling back to 'zstd_fast'.",
+          mcap_compression.c_str());
+      mcap_compression = "zstd_fast";
+    }
+    storage_options.storage_preset_profile = mcap_compression;
+  }
 
   rosbag2_cpp::ConverterOptions converter_options{
       rmw_get_serialization_format(),

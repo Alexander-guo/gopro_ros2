@@ -21,18 +21,21 @@ struct BagConfig {
 };
 
 /**
- * @brief Infer storage_id and normalized bag file path
- * 
- * Rules:
- *   - ".mcap"  → storage_id = "mcap"
- *   - ".db3"   → storage_id = "sqlite3"
- *   - no ext   → default storage_id = "sqlite3" and ".db3" is appended
- *   - unknown ext → storage_id = "sqlite3"
- * 
- * @param bag_path input path (may or may not have extension)
+ * @brief Normalize the bag URI and ROS storage backend from an explicit storage selection.
+ *
+ * Supported storage_id values:
+ *   - ".mcap" -> storage_id = "mcap"
+ *   - ".db3"  -> storage_id = "sqlite3"
+ *
+ * The provided bag_path is treated as the bag directory path. The storage backend
+ * will create the actual bag files inside it (for example: <dir>/bag_0.mcap and
+ * <dir>/metadata.yaml). Any unsupported value falls back to ".db3" behavior.
+ *
+ * @param bag_path input bag directory path (may or may not have an extension)
+ * @param storage_id storage selector (".mcap" or ".db3")
  * @return BagConfig containing uri and storage_id
  */
-BagConfig infer_bag_config(const std::string &bag_path);
+BagConfig infer_bag_config(const std::string &bag_path, const std::string &storage_id = ".db3");
 
 class ProgressBar {
 private:
