@@ -33,6 +33,9 @@ Tested on Ubuntu 24.04 (ROS2-Jazzy).
 - [FFmpeg](http://ffmpeg.org/) >= 6.1.1
 - [Eigen3](http://eigen.tuxfamily.org/index.php?title=Main_Page)
 
+Building from source requires the FFmpeg development headers in addition to the
+`ffmpeg` executable.
+
 ## Install Dependencies
 
 - First install ROS2 using [this guide](https://docs.ros.org/en/jazzy/Installation.html).
@@ -43,13 +46,28 @@ sudo apt-get update
 
 # ROS 2 dependencies
 sudo apt-get install -y \
+    ros-$ROS_DISTRO-ament-cmake \
+    ros-$ROS_DISTRO-rclcpp \
+    ros-$ROS_DISTRO-std-msgs \
+    ros-$ROS_DISTRO-geometry-msgs \
+    ros-$ROS_DISTRO-sensor-msgs \
+    ros-$ROS_DISTRO-cv-bridge \
     ros-$ROS_DISTRO-rosbag2-cpp \
     ros-$ROS_DISTRO-rosbag2-storage-default-plugins \
+    ros-$ROS_DISTRO-ros2launch
 
-# System libraries
+# System libraries and development headers
 sudo apt-get install -y \
     libeigen3-dev \
     libopencv-dev \
+    libavcodec-dev \
+    libavdevice-dev \
+    libavfilter-dev \
+    libavformat-dev \
+    libavutil-dev \
+    libpostproc-dev \
+    libswresample-dev \
+    libswscale-dev \
     ffmpeg
 ```
 
