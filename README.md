@@ -78,7 +78,7 @@ Before proceeding, ensure all dependencies are installed. To install gopro_ros2 
 ```bash
 mkdir -p ~/gopro_ros2_ws/src
 cd gopro_ros2_ws/src
-git clone https://github.com/Alexander-guo/gopro_ros2.git
+git clone https://github.com/AutonomousFieldRoboticsLab/gopro_ros2.git
 cd ~/gopro_ros2_ws
 colcon build --packages-select gopro_ros2 --symlink-install --cmake-args -DBUILD_GOPRO_TO_ASL=OFF
 source ~/gopro_ros2_ws/install/setup.bash # Or add this to ~/.bashrc to make it permanent
