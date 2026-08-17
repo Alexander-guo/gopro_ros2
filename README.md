@@ -90,16 +90,43 @@ GoPro splits video into smaller chunks. By splitting up the video it reduces the
 
 ## Save to ROS2 bag
 
-Both storage backends, MCAP(.mcap) and SQLite3(.db3), are supported and automatically identified by the suffix of `<bag_file>` for `rosbag` argument. To save GoPro video with IMU measurements to ros2 bag:
+Both MCAP and SQLite3 storage backends are supported. The `rosbag` argument is
+the output **bag directory**, not an output filename. Select the backend
+explicitly with `storage_id:=.mcap` (the default) or `storage_id:=.db3`. 
+<!-- A `.mcap` or `.db3` suffix supplied in `rosbag` is stripped and does not select -->
+<!-- the backend. -->
+
+For example, write an MCAP bag with the default fast Zstandard compression:
 
 ```bash
-ros2 launch gopro_ros2 gopro_to_rosbag.xml gopro_video:=<gopro_video_file> rosbag:=<bag_file>
+ros2 launch gopro_ros2 gopro_to_rosbag.xml \
+    gopro_video:=/path/to/GX010001.MP4 \
+    rosbag:=/path/to/output/gopro_run \
+    storage_id:=.mcap \
+    mcap_compression:=zstd_fast
+```
+
+This creates the rosbag2 directory `gopro_run/`, containing `metadata.yaml` and
+the generated `.mcap` storage file.
+
+The supported MCAP compression profiles are `zstd_fast` (default),
+`zstd_small`, and `none`. To write a SQLite3 bag instead:
+
+```bash
+ros2 launch gopro_ros2 gopro_to_rosbag.xml \
+    gopro_video:=/path/to/GX010001.MP4 \
+    rosbag:=/path/to/output/gopro_run \
+    storage_id:=.db3
 ```
 
 If you have multiple files from a single session, put all videos in same folder you can use the following command to concatenate into a single rosbag:
 
 ```bash
-ros2 launch gopro_ros2 gopro_to_rosbag.xml gopro_folder:=<folder_with_gopro_video_files> multiple_files:=true rosbag:=<bag_file>
+ros2 launch gopro_ros2 gopro_to_rosbag.xml \
+    gopro_folder:=/path/to/gopro_video_files \
+    multiple_files:=true \
+    rosbag:=/path/to/output/gopro_run \
+    storage_id:=.mcap
 ```
 
 ## Save to EuRoC format
